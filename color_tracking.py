@@ -19,9 +19,9 @@ ap.add_argument("-b", "--buffer", type=int, default=64,
 	help="max buffer size")
 ap.add_argument("-c", "--color", default="green",
     help="color to track")
-ap.add_argument("-r", "--radius", default=10,
+ap.add_argument("-r", "--radius", default=20,
     help="minimum radius to be tracked")
-ap.add_argument("-n", "--numpoint", default=3,
+ap.add_argument("-n", "--numpoint", default=2,
     help="maximum number of objects to be plotted in a frame")
 args = vars(ap.parse_args())
 
@@ -57,7 +57,16 @@ else:
 # allow the camera or video file to warm up
 time.sleep(2.0)
 
+# set writer
+fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+writer_track = None
+writer_mask = None
+(h, w) = (None, None)
+
 maxnumpoint = args["numpoint"]
+
+# add framecount
+framecount = 1
 
 # keep looping
 while True:
@@ -72,6 +81,15 @@ while True:
     # resize the frame, blur it, and convert it to the HSV
     # color space
     frame = imutils.resize(frame, width=600)
+
+    # set writer
+    if writer_track is None:
+        (h, w) = frame.shape[:2]
+        writer_track = cv2.VideoWriter('out_track.avi', fourcc, 60, (w, h), True)
+    if writer_mask is None:
+        (h, w) = frame.shape[:2]
+        writer_mask = cv2.VideoWriter('out_mask.avi', fourcc, 60, (w, h), True)
+
     blurred = cv2.GaussianBlur(frame, (11, 11), 0)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     # construct a mask for the color "green", then perform
@@ -84,7 +102,7 @@ while True:
         mask2 = cv2.inRange(hsv, colormap[args["color"]][2], colormap[args["color"]][3])
         mask = mask1 | mask2
     mask = cv2.erode(mask, None, iterations=2)
-    mask = cv2.dilate(mask, None, iterations=2)
+    mask = cv2.dilate(mask, None, iterations=4)
     # find contours in the mask and initialize the current
     # (x, y) center of the ball
     cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -116,7 +134,6 @@ while True:
         objects = ct.update(rects)
         # use trackable object to plot object trail
         for (objectID, centroid) in objects.items():
-            print(objectID)
             to = trackableObjects.get(objectID, None)
 
             if to is None:
@@ -134,6 +151,15 @@ while True:
                 cv2.line(frame, (to.deque[j - 1][0], to.deque[j-1][1]), (to.deque[j][0], to.deque[j][1]), (0, 0, 255), thickness)
     # show the frame to our screen
     cv2.imshow("Frame", frame)
+    cv2.imshow("Mask", mask)
+
+    # write video
+    writer_track.write(frame)
+    writer_mask.write(np.stack((mask, mask, mask), axis = 2))
+
+    # add framecount
+    framecount += 1
+
     key = cv2.waitKey(1) & 0xFF
     # if the 'q' key is pressed, stop the loop
     if key == ord("q"):
@@ -144,5 +170,9 @@ if not args.get("video", False):
 # otherwise, release the camera
 else:
 	vs.release()
+# release video writer
+writer_track.release()
+writer_mask.release()
+
 # close all windows
 cv2.destroyAllWindows()
